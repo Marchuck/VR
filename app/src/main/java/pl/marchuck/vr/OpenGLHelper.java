@@ -56,10 +56,11 @@ public class OpenGLHelper implements View.OnClickListener {
     private boolean doOnceJobWithCamera;
     private Texture texFront, texBack;
     private int pressedTimes = 0;
-
     private Object3D currentModel;
-
     private World world;
+    private AtomicBoolean nowIsSwitching = new AtomicBoolean(false);
+    private ProgressIndicator progressIndicator;
+    private MyRenderer renderer;
 
     private static boolean isGLES2_0(Context ctx) {
         final ActivityManager activityManager = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
@@ -67,52 +68,49 @@ public class OpenGLHelper implements View.OnClickListener {
         return configurationInfo.reqGlEsVersion >= 0x20000;
     }
 
-    @Override
-    public void onClick(View view) {
-        pressedTimes = ((pressedTimes + 1) % 5);
-        switch (pressedTimes) {
-            case 1: {
-                switchModel("spider_man", 30);
-                break;
-            }
-            case 2: {
-                switchModel("puss_in_boots", 40);
-                break;
-            }
-            case 3: {
-                switchModel("shark", 20);
-                break;
-            }
-            case 4: {
-                switchModel("frizza", 10);
-                break;
-            }
-            case 0: {
-                switchModel("joker", 1);
-                break;
-            }
-        }
-    }
-
-    private AtomicBoolean nowIsSwitching = new AtomicBoolean(false);
-
-    public void setProgressIndicator(ProgressIndicator indicator) {
-        this.indicator = indicator;
-    }
-
-    private ProgressIndicator indicator;
-
     public interface ProgressIndicator {
         void showProgressBar();
 
         void hideProgressBar();
     }
 
+    @Override
+    public void onClick(View view) {
+        pressedTimes = ((pressedTimes + 1) % 5);
+        switch (pressedTimes) {
+            case 0: {
+                switchModel("joker", 1);
+                break;
+            }
+            case 1: {
+                switchModel("spider_man", 30);
+                break;
+            }
+            case 2: {
+                switchModel("puss_in_boots", 30);
+                break;
+            }
+            case 3: {
+                switchModel("shark", 10);
+                break;
+            }
+            case 4: {
+                switchModel("frizza", 10);
+                break;
+            }
+        }
+    }
+
+    public void setProgressIndicator(ProgressIndicator indicator) {
+        this.progressIndicator = indicator;
+    }
+
+
     private void switchModel(String s, float f) {
         Log.d(TAG, "switchModel: ");
         if (world == null || nowIsSwitching.get()) return;
         nowIsSwitching.set(true);
-        if (indicator != null) indicator.showProgressBar();
+        if (progressIndicator != null) progressIndicator.showProgressBar();
         loadModel(s + ".obj", s + ".mtl", f / 2).map(new Func1<Object3D, World>() {
             @Override
             public World call(Object3D object3D) {
@@ -123,7 +121,7 @@ public class OpenGLHelper implements View.OnClickListener {
                     @Override
                     public void onCompleted() {
                         nowIsSwitching.set(false);
-                        if (indicator != null) indicator.hideProgressBar();
+                        if (progressIndicator != null) progressIndicator.hideProgressBar();
                     }
 
                     @Override
@@ -166,7 +164,8 @@ public class OpenGLHelper implements View.OnClickListener {
         @Override
         public void onSurfaceChanged(GL10 gl10, int w, int h) {
             final OpenGLHelper weakHelper = helperWeakReference.get();
-            if (weakHelper == null) return;
+            if (weakHelper == null || weakHelper.nowIsSwitching.get()) return;
+
             if (frameBuffer != null) {
                 frameBuffer.dispose();
             }
@@ -287,11 +286,11 @@ public class OpenGLHelper implements View.OnClickListener {
                     worldAsyncEmitter.onError(new Throwable("Nullable OpenGLProxy reference"));
                     return;
                 }
-                if (proxy.getContext() == null) {
+                if (proxy.getBaseContext() == null) {
                     worldAsyncEmitter.onError(new Throwable("Nullable OpenGLProxy context reference"));
                     return;
                 }
-                Resources res = proxy.getContext().getResources();
+                Resources res = proxy.getBaseContext().getResources();
                 if (res == null) {
                     worldAsyncEmitter.onError(new Throwable("Nullable Resources  reference"));
                     return;
@@ -300,10 +299,18 @@ public class OpenGLHelper implements View.OnClickListener {
                 world.setAmbientLight(20, 20, 20);
 
                 Drawable drawableFront = res.getDrawable(R.drawable.__auto_);
+                if (drawableFront == null) {
+                    worldAsyncEmitter.onError(new Throwable("Nullable drawable"));
+                    return;
+                }
                 texFront = new Texture(BitmapHelper.rescale(BitmapHelper.convert(drawableFront), 256, 256));
                 TextureManager.getInstance().addTexture("tex_front", texFront);
 
                 Drawable drawableBack = res.getDrawable(R.drawable.__auto_1);
+                if (drawableBack == null) {
+                    worldAsyncEmitter.onError(new Throwable("Nullable drawable"));
+                    return;
+                }
                 texBack = new Texture(BitmapHelper.rescale(BitmapHelper.convert(drawableBack), 256, 256));
                 TextureManager.getInstance().addTexture("tex_back", texBack);
                 worldAsyncEmitter.onNext(world);
@@ -351,12 +358,12 @@ public class OpenGLHelper implements View.OnClickListener {
                     object3DAsyncEmitter.onError(new Throwable("Nullable OpenGLProxy reference"));
                     return;
                 }
-                if (proxy.getContext() == null) {
+                if (proxy.getBaseContext() == null) {
                     object3DAsyncEmitter.onError(new Throwable("Nullable OpenGLProxy context reference"));
                     return;
                 }
 
-                AssetManager assetManager = proxy.getContext().getResources().getAssets();
+                AssetManager assetManager = proxy.getBaseContext().getResources().getAssets();
 
                 if (assetManager == null) {
                     object3DAsyncEmitter.onError(new Throwable("Nullable AssetManager reference"));
@@ -390,7 +397,7 @@ public class OpenGLHelper implements View.OnClickListener {
 
     public OpenGLHelper(@NonNull final OpenGLProxy openGLProxy) {
         this.openGLProxyRef = new WeakReference<>(openGLProxy);
-        isGL20 = isGLES2_0(openGLProxy.getContext());
+        isGL20 = isGLES2_0(openGLProxy.getBaseContext());
         if (isGL20) {
             openGLProxy.getSurfaceView().setEGLContextClientVersion(2);
         } else {
@@ -415,13 +422,4 @@ public class OpenGLHelper implements View.OnClickListener {
         openGLProxy.getSurfaceView().setRenderer(renderer);
 
     }
-
-    MyRenderer renderer;
-
-    @Deprecated
-    public OpenGLHelper withExtendedCallbacks() {
-
-        return this;
-    }
-
 }

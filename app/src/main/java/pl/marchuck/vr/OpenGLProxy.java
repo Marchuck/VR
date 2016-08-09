@@ -9,7 +9,7 @@ import android.opengl.GLSurfaceView;
  * @since 09.08.16.
  */
 public interface OpenGLProxy {
-    Context getContext();
+    Context getBaseContext();
 
     GLSurfaceView getSurfaceView();
 
