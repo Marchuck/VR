@@ -29,4 +29,6 @@ dependencies {
     releaseCompile 'com.squareup.leakcanary:leakcanary-android-no-op:1.4-beta2'
     testCompile 'com.squareup.leakcanary:leakcanary-android-no-op:1.4-beta2'
     compile files('libs/jpct_ae.jar')
+
+    compile 'com.github.pwittchen:swipe:0.0.1'
 }

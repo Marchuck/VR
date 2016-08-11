@@ -8,6 +8,7 @@ import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.opengl.GLSurfaceView;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -41,7 +42,7 @@ import rx.Subscriber;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.functions.Action1;
 import rx.functions.Func1;
-import rx.functions.Func2;
+import rx.functions.Func4;
 import rx.schedulers.Schedulers;
 
 
@@ -49,7 +50,7 @@ import rx.schedulers.Schedulers;
  * @author Lukasz Marczak
  * @since 08.08.16.
  */
-public class OpenGLHelper implements View.OnClickListener {
+public class OpenGLHelper implements View.OnClickListener, Changeable {
     public static final String TAG = OpenGLHelper.class.getSimpleName();
     private boolean isGL20;
     private boolean isAdded;
@@ -57,15 +58,36 @@ public class OpenGLHelper implements View.OnClickListener {
     private Texture texFront, texBack;
     private int pressedTimes = 0;
     private Object3D currentModel;
+    private Object3D rightModel, leftModel, centerModel;
     private World world;
     private AtomicBoolean nowIsSwitching = new AtomicBoolean(false);
     private ProgressIndicator progressIndicator;
     private MyRenderer renderer;
 
+
     private static boolean isGLES2_0(Context ctx) {
         final ActivityManager activityManager = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
         final ConfigurationInfo configurationInfo = activityManager.getDeviceConfigurationInfo();
         return configurationInfo.reqGlEsVersion >= 0x20000;
+    }
+
+    @Override
+    public void onChange(int swipingResult) {
+        if (nowIsSwitching.get()) return;
+        nowIsSwitching.set(true);
+        Object3D obj = centerModel;
+        if (swipingResult == 1) {
+            obj = leftModel;
+        } else if (swipingResult == 2) {
+            obj = rightModel;
+        }
+        addObjectToWorld(world, obj);
+        nowIsSwitching.set(false);
+    }
+
+    @Override
+    public int getLastChange() {
+        return renderer.swipingResult;
     }
 
     public interface ProgressIndicator {
@@ -151,6 +173,7 @@ public class OpenGLHelper implements View.OnClickListener {
         private long time;
         private float xpos, ypos;
         private FrameBuffer frameBuffer;
+        private int swipingResult;
 
         public MyRenderer(OpenGLHelper helper) {
             helperWeakReference = new WeakReference<>(helper);
@@ -176,10 +199,16 @@ public class OpenGLHelper implements View.OnClickListener {
                 frameBuffer = new FrameBuffer(gl10, w, h); // OpenGL ES 1.x constructor
             }
             if (weakHelper.world == null) {
-                Observable.zip(weakHelper.initWorld(), weakHelper.loadModel("shark.obj", "shark.mtl", 15f),
-                        new Func2<World, Object3D, World>() {
+                Observable.zip(weakHelper.initWorld(),
+                        weakHelper.loadModel("shark.obj", "shark.mtl", 6f),
+                        weakHelper.loadModel("joker.obj", "joker.mtl", 1f),
+                        weakHelper.loadModel("puss_in_boots.obj", "puss_in_boots.mtl", 30f),
+                        new Func4<World, Object3D, Object3D, Object3D, World>() {
                             @Override
-                            public World call(World world, Object3D object3D) {
+                            public World call(World world, Object3D object3D, Object3D object3D1, Object3D object3D2) {
+                                weakHelper.centerModel = object3D1;
+                                weakHelper.leftModel = object3D;
+                                weakHelper.rightModel = object3D2;
                                 return weakHelper.addObjectToWorld(world, object3D);
                             }
                         }).subscribeOn(Schedulers.computation())
@@ -197,29 +226,32 @@ public class OpenGLHelper implements View.OnClickListener {
 
                             @Override
                             public void onNext(World world) {
-
+                                Log.d(TAG, "onNext: world");
                             }
                         });
             }
         }
 
+        private boolean isNotReady(@Nullable OpenGLHelper weakHelper) {
+            return weakHelper == null || weakHelper.currentModel == null || weakHelper.nowIsSwitching.get();
+        }
+
         @Override
         public void onDrawFrame(GL10 gl10) {
-            OpenGLHelper helper = helperWeakReference.get();
-            if (helper == null) return;
-            if (helper.nowIsSwitching.get()) return;
-            World world = helper.world;
-            if (touchTurn != 0) {
-                helper.currentModel.rotateY(touchTurn);
-                // cube[1].rotateY(touchTurn);
-                touchTurn = 0;
-            }
-
-            if (touchTurnUp != 0) {
-                helper.currentModel.rotateX(touchTurnUp);
-                // cube[1].rotateX(touchTurnUp);
-                touchTurnUp = 0;
-            }
+            OpenGLHelper weakHelper = helperWeakReference.get();
+            if (isNotReady(weakHelper)) return;
+            World world = weakHelper.world;
+//            if (touchTurn != 0) {
+//                weakHelper.currentModel.rotateY(touchTurn);
+//                // cube[1].rotateY(touchTurn);
+//                touchTurn = 0;
+//            }
+//
+//            if (touchTurnUp != 0) {
+//                weakHelper.currentModel.rotateX(touchTurnUp);
+//                // cube[1].rotateX(touchTurnUp);
+//                touchTurnUp = 0;
+//            }
             if (frameBuffer != null) {
                 frameBuffer.clear(back);
                 if (world != null) {
@@ -228,7 +260,10 @@ public class OpenGLHelper implements View.OnClickListener {
                 }
                 frameBuffer.display();
             }
-
+            if (!weakHelper.nowIsSwitching.get() && weakHelper.currentModel != null) {
+                weakHelper.currentModel.rotateY(.03f);
+                //  weakHelper.currentModel.
+            }
             if (System.currentTimeMillis() - time >= 1000) {
                 Logger.log(fps + "fps");
                 fps = 0;
@@ -321,7 +356,7 @@ public class OpenGLHelper implements View.OnClickListener {
 
     public World addObjectToWorld(@NonNull final World world, @NonNull final Object3D object3D) {
         if (currentModel != null && isAdded) {
-            world.removeObject(currentModel);
+            world.removeAllObjects();
             isAdded = false;
             currentModel = null;
         }
@@ -330,6 +365,9 @@ public class OpenGLHelper implements View.OnClickListener {
         currentModel.rotateX((float) Math.PI);
 
         Camera cam = world.getCamera();
+
+
+        //todo: fix this character rotation!
         if (!doOnceJobWithCamera) {
             cam.moveCamera(Camera.CAMERA_MOVEOUT, 50);
             Light sun = new Light(world);
@@ -337,11 +375,12 @@ public class OpenGLHelper implements View.OnClickListener {
             cam.lookAt(currentModel.getTransformedCenter());
             SimpleVector sv = new SimpleVector();
             sv.set(currentModel.getTransformedCenter());
-            sv.y -= 200;
-            sv.z -= 200;
+            sv.y = -200;
+            sv.z = -200;
             sun.setPosition(sv);
             doOnceJobWithCamera = true;
         }
+
         MemoryHelper.compact();
         world.addObject(currentModel);
         return world;

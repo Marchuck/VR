@@ -4,10 +4,13 @@ import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.view.MotionEvent;
+import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 
+import com.github.pwittchen.swipe.library.Swipe;
+import com.github.pwittchen.swipe.library.SwipeListener;
 import com.threed.jpct.Logger;
 
 import static android.view.View.GONE;
@@ -19,23 +22,24 @@ import static android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT;
 public class ARActivity extends AppCompatActivity implements OpenGLProxy, OpenGLHelper.ProgressIndicator {
     public static final String TAG = ARActivity.class.getSimpleName();
 
-    private GLSurfaceView mGLView;
+    private GLSurfaceView glSurfaceView;
     private ProgressBar progressBar;
     private OpenGLHelper openGLHelper;
 
+    private Swipe swipe = new Swipe();
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        Logger.log("onCreate");
         super.onCreate(savedInstanceState);
 
-        mGLView = new GLSurfaceView(this);
+        glSurfaceView = new GLSurfaceView(this);
         openGLHelper = new OpenGLHelper(this);
-
+        swipe.addListener(new SwipeCharacterListener(openGLHelper));
         RelativeLayout relativeLayout = new RelativeLayout(this);
 
-        Button btn = new Button(this);
-        btn.setText("switch");
-        btn.setOnClickListener(openGLHelper);
+      //  Button btn = new Button(this);
+     //   btn.setText("switch");
+     //   btn.setOnClickListener(openGLHelper);
         RelativeLayout.LayoutParams paramsForBtn = new RelativeLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
 
         paramsForBtn.addRule(CENTER_HORIZONTAL);
@@ -46,12 +50,30 @@ public class ARActivity extends AppCompatActivity implements OpenGLProxy, OpenGL
 
         paramsForProgress.addRule(CENTER_IN_PARENT);
         progressBar.setLayoutParams(paramsForProgress);
-        btn.setLayoutParams(paramsForBtn);
+        progressBar.setVisibility(GONE);
+     //   btn.setLayoutParams(paramsForBtn);
 
-        relativeLayout.addView(mGLView);
+        relativeLayout.addView(glSurfaceView);
         relativeLayout.addView(progressBar);
-        relativeLayout.addView(btn);
+     //   relativeLayout.addView(btn);
         setContentView(relativeLayout);
+    }
+
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        swipe.dispatchTouchEvent(event);
+        return super.dispatchTouchEvent(event);
+    }
+
+    @Override
+    protected void onPause() {
+        glSurfaceView.onPause();
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        glSurfaceView.onResume();
     }
 
     @Override
@@ -61,7 +83,7 @@ public class ARActivity extends AppCompatActivity implements OpenGLProxy, OpenGL
 
     @Override
     public GLSurfaceView getSurfaceView() {
-        return mGLView;
+        return glSurfaceView;
     }
 
     @Override
